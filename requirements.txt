@@ -1,2 +1,5 @@
-whois
-idna
+python-whois==0.7.3 # WHOIS lookup
+idna==3.4 # Internationalized domain names
+
+# Standard concurrency and utilities come with Python (no need to include)
+# os, sys, re, time, json, csv, concurrent.futures are part of Python stdlib

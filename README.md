@@ -9,7 +9,7 @@ The goal is to provide a tool that automates calling the WHOIS server to look up
 
 1: Interactive mode 
 - this mode is active when the script is run from the command line without additional input argument
-- it keeps asking you to input domains until you type 'exit'
+- it keeps asking you to input domains until you type 'c' for continue
 - **Example**: `python whois_lookup.py `
 
 2: File mode 
@@ -22,7 +22,7 @@ The goal is to provide a tool that automates calling the WHOIS server to look up
 - all domains links you type after the script name will be processed
 - **Example**: `python whois_lookup.py python.org python.org blümchen.com`
 
-The results (domain, registrar) are saved as output in csv or json format. 
+The results (domain, registrar) can saved as output in csv or json format. 
 
 # Features
 
@@ -36,7 +36,7 @@ pyenv local 3.11.3
 python -m venv .venv
 source .venv/bin/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt --upgrade
 ```
 
 ## WindowsOS git-bash CLI
@@ -46,5 +46,7 @@ pyenv local 3.11.3
 python -m venv .venv
 source .venv/Scripts/activate
 pip install --upgrade pip
-pip install -r requirements.txt
+pip install -r requirements.txt --upgrade
 ```
+
+* Hint: use `--upgrade` to install packages listed in requirements.txt or update existing to pinned versions
