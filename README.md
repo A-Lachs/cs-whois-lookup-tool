@@ -19,10 +19,10 @@ The goal is to provide a tool that automates calling the WHOIS server to look up
 
 3: Domain mode
 - this mode is active when the script is run from the command line with an additional argument that is one or more domains
-- all domains links you type after the script name will be processed
+- all domain links you type after the script name will be processed
 - **Example**: `python whois_lookup.py python.org python.org blümchen.com`
 
-The results (domain, registrar) can saved as output in csv or json format. 
+The results (domain, registrar) can saved as a file in csv or json format. 
 
 # Features
 

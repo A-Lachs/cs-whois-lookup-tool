@@ -135,8 +135,8 @@ def interactive_input_mode() -> list[str]:
     """
     Handles interactive input for domain registrar lookup.
 
-    - Continuously prompts the user for domains until 'exit' is typed.
-    - Normalizes input using process_input() (removes www., trims, dedupes per input).
+    - Continuously prompts the user for domains until 'c' for continue is typed.
+    - Normalizes input using process_input() -> removes www., trims, dedupes per input.
     - Returns a list of cleaned, unique domain strings collected during the session.
     """
 
@@ -146,9 +146,9 @@ def interactive_input_mode() -> list[str]:
     while True:
             user_input = input("    Enter domains here (or type 'c' to continue processing): ")
             
-            # Check for exit command
+            # Check for continue command 
             if user_input.strip().lower() == 'c':
-                return list(session_domains)  # return all collected domains collected so far
+                return list(session_domains)  # return all domains collected so far
             
             # Process non-empty input 
             if user_input: 
@@ -185,7 +185,7 @@ def process_input(input_given: str| list) -> list[str]:
     if isinstance(input_given, list):
         input_given = " ".join(input_given)
 
-    if isinstance(input_given, str):  # Non-empty string
+    if isinstance(input_given, str):  # do preprocessing
         # Replace separators with spaces
         separators = [",", ";", "|"]
         cleaned_input = input_given
@@ -202,11 +202,12 @@ def process_input(input_given: str| list) -> list[str]:
         return list(set(domains))
 
 
-def read_or_return(arg: str) -> str | list[str]:
+def determine_input_format(arg: str) -> str | list[str]:
     """
-    Attempt to read the argument as a file.
-    If the file exists, returns a list of non-empty stripped lines.
-    Otherwise, returns the original argument as a string.
+    Helder function used to deptermine the input mode (2 or 3).
+    Attempts to read the argument as a file.
+    If the file exists, returns a list of non-empty stripped lines -> Mode 2
+    Otherwise, returns the original argument as a string -> Mode 3
     """
     try:
         with open(arg, 'r', encoding='utf-8') as f:
@@ -370,7 +371,8 @@ if __name__ == "__main__":
     else:
         # Modes 2 & 3: Command-line arguments (files or domain strings)
         for arg in sys.argv[1:]:
-            raw_input = read_or_return(arg)
+            # read input arg as file or domains srings
+            raw_input = determine_input_format(arg)
             
             # Process input: normalize, dedupe per batch
             processed_domains = process_input(raw_input)
@@ -384,7 +386,7 @@ if __name__ == "__main__":
     # Lookup registrars concurrently
     results = process_domains_concurrently(final_domains)
 
-    # Save or process results
+    # Save results
     process_and_save_new_data(results)
 
     print("+++ Closing the program. Goodbye! +++\n")
