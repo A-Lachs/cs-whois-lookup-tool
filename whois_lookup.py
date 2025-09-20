@@ -6,7 +6,9 @@ import time
 import sys
 import re
 import idna  # pip install idna
-from concurrent.futures import ThreadPoolExecutor, as_completed 
+from concurrent.futures import ThreadPoolExecutor, as_completed
+import json
+import csv 
 
 MAX_WORKERS = 5  # concurrency cap
 
@@ -129,83 +131,260 @@ def process_domains_concurrently(domain_list):
     return results
 
 
-def interactive_input_mode():
+def interactive_input_mode() -> list[str]:
     """
-    This function handles the interactive input mode.
-    - Keeps asking for domain links until you type 'exit'.
-    - Calls the helper function process_input() to format the input.
-    - Uses the threading function process_domains_concurrently() to lookup the registrars.
+    Handles interactive input for domain registrar lookup.
+
+    - Continuously prompts the user for domains until 'exit' is typed.
+    - Normalizes input using process_input() (removes www., trims, dedupes per input).
+    - Returns a list of cleaned, unique domain strings collected during the session.
     """
-    print("\n+++ Welcome! Enter one or more domains to check their registrars.")
-    new_data = []
+
+    print("\n+++ Welcome! Enter one or more domains to check their registrars.\n")
+    session_domains = set()  # keep unique domains in this session
     
     while True:
-            user_input = input("    Enter domains here or type exit to quit the program: ")
+            user_input = input("    Enter domains here (or type 'c' to continue processing): ")
             
-            if user_input == 'exit'.strip().lower():
-                if new_data:
-                    # if there is data, return it --> will be saved before exiting the program 
-                    return new_data
-                break
-            elif user_input:
+            # Check for exit command
+            if user_input.strip().lower() == 'c':
+                return list(session_domains)  # return all collected domains collected so far
+            
+            # Process non-empty input 
+            if user_input: 
                 processed_input = process_input(user_input)
-                # Use threads instead of sequential loop
-                new_data.extend(process_domains_concurrently(processed_input))             
+
+                if processed_input:  # Only proceed if there are valid domains
+                    session_domains.update(processed_input)
+                    print(f"\n+++ Collected {len(processed_input)} new domain(s). Total so far: {len(session_domains)}")
+                else:
+                    print("\n+++ No valid domains found. Please try again.\n")            
             else:
-                print("+++ Invalid input, please try again or type exit.\n")
+                print("\n+++ Invalid input! Please enter one or more domain names or type 'c' to continue.\n")
 
 
-def process_input(input_given: str| list) -> list | None: 
-    pass
+def process_input(input_given: str| list) -> list[str]:
+    """
+    Normalize raw input containing domain names into a clean, unique list.
 
-def unique_items_to_process(old_data, new_data):
-    # Keep only new unique items
-    return [item for item in new_data if item not in old_data]
+    This function accepts either:
+      - a string of domains separated by spaces, commas, semicolons, or pipes
+      - a list of such strings
+
+    It removes leading 'www.' prefixes, trims whitespace, normalizes case,
+    and returns the domains as a deduplicated list of strings.
+
+    Args:
+        input_given (str | list):   Raw input string or list of strings
+                                    containing domain names.
+    Returns:
+        list[str]:                  A list of cleaned domain names.
+    """
+    
+    # If input is a list, join all elements into a single string
+    if isinstance(input_given, list):
+        input_given = " ".join(input_given)
+
+    if isinstance(input_given, str):  # Non-empty string
+        # Replace separators with spaces
+        separators = [",", ";", "|"]
+        cleaned_input = input_given
+        for separator in separators:
+            cleaned_input = cleaned_input.replace(separator, " ")
+
+        # Split on spaces, drop extra spaces with strip, normalize to lowercase
+        parts = [p.strip().lower() for p in cleaned_input.split(" ") if p.strip()]
+
+        # Strip "www." prefix from each domain
+        domains = [p.removeprefix("www.") for p in parts]
+
+        # return a list of unique domains
+        return list(set(domains))
+
+
+def read_or_return(arg: str) -> str | list[str]:
+    """
+    Attempt to read the argument as a file.
+    If the file exists, returns a list of non-empty stripped lines.
+    Otherwise, returns the original argument as a string.
+    """
+    try:
+        with open(arg, 'r', encoding='utf-8') as f:
+            return [line.strip() for line in f if line.strip()]
+    except FileNotFoundError:
+        return arg  # treat as domain string if file not found
+
+
+def process_and_save_new_data(new_data: list[tuple]):
+    """
+    Handles saving of new domain registrar data.
+    
+    - Deduplicates new data (safety check)
+    - Prompts user for output format (CSV, JSON, or None)
+    - Loads existing data and avoids duplicates
+    - Writes only unique new data to the chosen format, or skips saving
+
+    Args:
+        new_data (list[tuple]): List of tuples containing registrar info
+    """
+    if not new_data:
+        print("+++ No new data to process.")
+        return
+
+    # Deduplicate new data (safety check)
+    deduped_new_data = list(set(new_data))
+
+    # Ask user for desired output format (CSV, JSON, or None)
+    format_choice = ask_output_file_format()  # Should return "csv", "json", or "none"
+
+    if format_choice.lower() == "none":
+        print("+++ Skipping saving of data as per user choice.")
+        return
+
+    # Load existing data from file
+    existing_data = get_existing_data(format_choice) or []
+
+    # Deduplicate against existing data
+    unique_data_to_save = list(set(deduped_new_data) - set(existing_data))
+
+    if not unique_data_to_save:
+        print("+++ No unique new data to save.")
+        return
+
+    # Save to chosen format
+    if format_choice.lower() == "csv":
+        write_to_csv(unique_data_to_save)
+    else:
+        write_to_json(unique_data_to_save)
+
+    print(f"+++ Saved {len(unique_data_to_save)} new entries to {format_choice.upper()} file.")
+
+
+def get_existing_data(format_chosen):
+    """
+    Load existing domain-registrar data from CSV or JSON, returning a list of tuples.
+    Returns an empty list if the file does not exist.
+    """
+    file_path = f"output.{format_chosen}"
+
+    if not os.path.exists(file_path):
+        return []
+
+    if format_chosen == "csv":
+        data = []
+        with open(file_path, "r", encoding="utf-8") as f:
+            reader = csv.reader(f)
+            next(reader, None)  # skip header if present
+            for row in reader:
+                if len(row) >= 2:
+                    data.append((row[0].strip(), row[1].strip()))
+        return data
+
+    elif format_chosen == "json":
+        with open(file_path, "r", encoding="utf-8") as f:
+            json_data = json.load(f)
+        # Convert dict to list of tuples
+        return [(k, v) for k, v in json_data.items()]
+
 
 def ask_output_file_format() -> str:
     """
     Ask the user which output format they want.
-    Default is CSV unless the user types 'json'.
+    Options:
+      - 'csv' (default)
+      - 'json'
+      - 'skip' to not save the data
+
+    Returns:
+        str: One of 'csv', 'json', or 'none' (skip saving)
     """
     print("\n+++ How to save the results?")
-    choice = input("    Type 'json' to change format or press Enter to keep default: ").strip().lower()
+    print("    Press Enter for default (CSV)")
+    print("    Type 'json' to save as JSON")
+    print("    Type 'skip' to not save the data at all")
+    
+    choice = input("    Your choice: ").strip().lower()
 
     if choice == "json":
         return "json"
+    elif choice == "skip":
+        return "none"
     else:
         return "csv"
+
+
+def write_to_csv(data, filename='output.csv' ):
+    """
+    Save data to output.csv in proper CSV format.
+    data should be a list of tuples/lists like [(domain, registrar), ...]
+    """
+    file_exists = os.path.isfile(filename)
+    print(f"\n+++ Writing results to {filename} +++\n")
+
+    with open(filename, "a", newline="", encoding="utf-8") as f:
+        writer = csv.writer(f)
+        # Write header only if file is new
+        if not file_exists:
+            writer.writerow(["Domain", "Registrar"])
+        # Write the data
+        writer.writerows(data)
+
     
-def process_and_save_new_data(new_data):
-    # Wrapper function for data handling.
-    pass
+def write_to_json(data, filename="output.json"):
+    """
+    Save data to JSON without overwriting existing content.
+    `data` should be a dict: {domain: registrar, ...}
+    """
+    print(f"\n+++ Writing results to {filename} +++\n")
+
+    # Load existing JSON if file exists
+    if os.path.isfile(filename):
+        with open(filename, "r", encoding="utf-8") as f:
+            try:
+                existing_data = json.load(f)
+            except json.JSONDecodeError:
+                existing_data = {}
+    else:
+        existing_data = {}
+
+    # Merge new data into existing
+    existing_data.update(data)
+
+    # Write back merged data
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(existing_data, f, indent=4, ensure_ascii=False)   
 
 # ---------------------- Main Program -----------------------------------------
 
 if __name__ == "__main__":
-    
-    # starts a whoois lookup for registrars in different modes 
-    # depending on the number and type of arguments given in the command line 
+    """
+    Main program: performs WHOIS lookup for domains in different modes.
+    Guarantees globally unique domains in the final results.
+    """
+    all_domains = set()  # Using a set ensures global uniqueness
 
-    if len(sys.argv) == 1: # no extra argument
-    
-    # --- Mode 1: Interactive Domain input
-        new_data = interactive_input_mode()   
-        
+    if len(sys.argv) == 1:
+        # Mode 1: Interactive input
+        processed_domains = interactive_input_mode()
+        all_domains.update(processed_domains)
     else:
-        new_data = []   
-    # --- Modes 2 & 3: Process command line arguments as files or domains
+        # Modes 2 & 3: Command-line arguments (files or domain strings)
         for arg in sys.argv[1:]:
-            try:
-                # Mode 2: Try to treat argument as a filename
-                with open(arg, 'r', encoding='utf-8') as f:
-                    domain_lines = [line.strip() for line in f if line.strip()]
-                    new_data.extend(process_domains_concurrently(domain_lines))
-                                  
-            except FileNotFoundError:
-                # Mode 3: If argument not a file, treat as domain
-                domain_list = [d.strip() for d in arg.split(",") if d.strip()]
-                new_data.extend(process_domains_concurrently(domain_list))
+            raw_input = read_or_return(arg)
+            
+            # Process input: normalize, dedupe per batch
+            processed_domains = process_input(raw_input)
+            
+            # Add to global set for uniqueness
+            all_domains.update(processed_domains)
 
-    process_and_save_new_data(new_data) 
+    # Convert set to list for further processing or saving
+    final_domains = list(all_domains)
+
+    # Lookup registrars concurrently
+    results = process_domains_concurrently(final_domains)
+
+    # Save or process results
+    process_and_save_new_data(results)
 
     print("+++ Closing the program. Goodbye! +++\n")
