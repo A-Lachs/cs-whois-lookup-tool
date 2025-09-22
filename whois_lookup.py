@@ -120,7 +120,23 @@ def extract_registrar(domain_info) -> str:
     return registrar
 
 
-def process_domains_concurrently(domain_list):
+def process_domains_concurrently(domain_list: list[str]):
+    """
+     Processes a list of domains concurrently to retrieve their registrar information.
+
+    This function uses a ThreadPoolExecutor to run `get_registrar` for each domain
+    in the given list. It submits each domain as a task to the thread pool and collects
+    the results as they complete. The degree of concurrency is limited by the constant
+    `MAX_WORKERS`.
+
+    Args:
+        domain_list (list[str]): A list of domain names to query.
+
+    Returns:
+        list:   A list of results returned by `get_registrar` for each domain,
+                in the order they finish processing
+
+    """
     print("\n+++ Running domain requests -> registrar +++")
     results = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
